@@ -33,6 +33,7 @@ from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.common.utils import get_device, is_vectorized_observation, obs_as_tensor
 from stable_baselines3.common.policies import ActorCriticPolicy, register_policy
 from ppo_ddt.agents.vectorized_prolonet import ProLoNet
+from torch.distributions import Categorical
 
 
 
@@ -141,6 +142,17 @@ class DDTPolicy(ActorCriticPolicy):
         self.action_dist = make_proba_distribution(action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
 
         self._build(lr_schedule)
+
+        features_dim = np.prod(observation_space.shape)
+        action_dim = action_space.n
+
+        self.ddt = ProLoNet(input_dim=features_dim,
+                            output_dim=action_dim,
+                            weights=None,
+                            comparators=None,
+                            leaves=32,
+                            alpha=1,
+                            device='cuda').to('cuda')
 
     def _get_constructor_parameters(self) -> Dict[str, Any]:
         data = super()._get_constructor_parameters()
@@ -255,9 +267,16 @@ class DDTPolicy(ActorCriticPolicy):
         # Evaluate the values for the given observations
         values = self.value_net(latent_vf)
         distribution = self._get_action_dist_from_latent(latent_pi, latent_sde=latent_sde)
-        actions = distribution.get_actions(deterministic=deterministic)
+        actions = self._get_actions(distribution=distribution, deterministic=deterministic)
         log_prob = distribution.log_prob(actions)
         return actions, values, log_prob
+
+    def _get_actions(self, distribution, deterministic: bool = False) -> th.Tensor:
+
+        if deterministic:
+            return th.argmax(distribution.probs, dim=1)
+
+        return distribution.sample()
 
     def _get_latent(self, obs: th.Tensor) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
@@ -269,14 +288,13 @@ class DDTPolicy(ActorCriticPolicy):
         """
         # Preprocess the observation if needed
         features = self.extract_features(obs)
-        # print('features', features.size())
         latent_pi, latent_vf = self.mlp_extractor(features)
 
         # Features for sde
         latent_sde = latent_pi
         if self.sde_features_extractor is not None:
             latent_sde = self.sde_features_extractor(features)
-        return latent_pi, latent_vf, latent_sde
+        return obs.view(obs.size(0), obs.size(1)*obs.size(2)), latent_vf, latent_sde
 
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor, latent_sde: Optional[th.Tensor] = None) -> Distribution:
         """
@@ -285,23 +303,12 @@ class DDTPolicy(ActorCriticPolicy):
         :param latent_sde: Latent code for the gSDE exploration function
         :return: Action distribution
         """
-        mean_actions = self.action_net(latent_pi)
+        
+        probs = self.ddt(latent_pi)
 
-        if isinstance(self.action_dist, DiagGaussianDistribution):
-            return self.action_dist.proba_distribution(mean_actions, self.log_std)
-        elif isinstance(self.action_dist, CategoricalDistribution):
-            # Here mean_actions are the logits before the softmax
-            return self.action_dist.proba_distribution(action_logits=mean_actions)
-        elif isinstance(self.action_dist, MultiCategoricalDistribution):
-            # Here mean_actions are the flattened logits
-            return self.action_dist.proba_distribution(action_logits=mean_actions)
-        elif isinstance(self.action_dist, BernoulliDistribution):
-            # Here mean_actions are the logits (before rounding to get the binary actions)
-            return self.action_dist.proba_distribution(action_logits=mean_actions)
-        elif isinstance(self.action_dist, StateDependentNoiseDistribution):
-            return self.action_dist.proba_distribution(mean_actions, self.log_std, latent_sde)
-        else:
-            raise ValueError("Invalid action distribution")
+        return Categorical(probs)
+
+
 
     def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
         """
@@ -312,7 +319,7 @@ class DDTPolicy(ActorCriticPolicy):
         """
         latent_pi, _, latent_sde = self._get_latent(observation)
         distribution = self._get_action_dist_from_latent(latent_pi, latent_sde)
-        return distribution.get_actions(deterministic=deterministic)
+        return self._get_actions(distribution=distribution, deterministic=deterministic)
 
     def evaluate_actions(self, obs: th.Tensor, actions: th.Tensor) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """

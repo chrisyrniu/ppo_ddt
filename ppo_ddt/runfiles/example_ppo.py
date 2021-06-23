@@ -305,16 +305,16 @@ env_kwargs = {
 if __name__ == "__main__":
     train = True
     if train:
-        n_cpu = 4
+        n_cpu = 8
         policy_kwargs = dict(
             features_extractor_class=CustomExtractor,
             features_extractor_kwargs=attention_network_kwargs,
         )
         env = make_vec_env(make_configure_env, n_envs=n_cpu, seed=0, vec_env_cls=SubprocVecEnv, env_kwargs=env_kwargs)
         eval_env = make_vec_env(make_configure_env, n_envs=1, seed=0, vec_env_cls=DummyVecEnv, env_kwargs=env_kwargs)
-        save_folder = 'saved_models/example_ppo'
+        save_folder = 'saved_models/ppo_ddt'
         callback = EpCheckPointCallback(eval_env=eval_env, best_model_save_path='../../' + save_folder + '/',
-		                                eval_freq=1000, minimum_reward=200)
+		                                eval_freq=1000, minimum_reward=28)
 
         model = PPO("MlpPolicy", env,
                     n_steps=512 // n_cpu,
@@ -336,4 +336,4 @@ if __name__ == "__main__":
         while not done:
             action, _ = model.predict(obs)
             obs, reward, done, info = env.step(action)
-            env.render()
+#             env.render()

@@ -9,7 +9,8 @@ import numpy as np
 from torch.nn import functional as F
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from ppo_ddt.rl_helpers.save_after_ep_callback import EpCheckPointCallback
 import highway_env
 
 # ==================================
@@ -305,12 +306,17 @@ env_kwargs = {
 if __name__ == "__main__":
     train = True
     if train:
-        n_cpu = 4
+        n_cpu = 8
         policy_kwargs = dict(
             features_extractor_class=CustomExtractor,
             features_extractor_kwargs=attention_network_kwargs,
         )
-        env = make_vec_env(make_configure_env, n_envs=1, seed=0, vec_env_cls=SubprocVecEnv, env_kwargs=env_kwargs)
+        env = make_vec_env(make_configure_env, n_envs=n_cpu, seed=0, vec_env_cls=SubprocVecEnv, env_kwargs=env_kwargs)
+        eval_env = make_vec_env(make_configure_env, n_envs=1, seed=0, vec_env_cls=DummyVecEnv, env_kwargs=env_kwargs)
+        save_folder = 'saved_models/ppo_ddt'
+        callback = EpCheckPointCallback(eval_env=eval_env, best_model_save_path='../../' + save_folder + '/',
+		                                eval_freq=1000, minimum_reward=28)
+
         model = PPO("DDTPolicy", env,
                     n_steps=512 // n_cpu,
                     batch_size=64,
@@ -319,7 +325,7 @@ if __name__ == "__main__":
                     verbose=2,
                     tensorboard_log="./highway_attention_ppo/")
         # Train the agent
-        model.learn(total_timesteps=200*1000)
+        model.learn(total_timesteps=200*1000, callback=callback)
         # Save the agent
         model.save("ppo-highway")
 
@@ -331,4 +337,4 @@ if __name__ == "__main__":
         while not done:
             action, _ = model.predict(obs)
             obs, reward, done, info = env.step(action)
-            env.render()
+#             env.render()

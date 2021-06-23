@@ -226,7 +226,7 @@ class ProLoNet(nn.Module):
             right_path_probs = right_path_probs.add(right_filler)
 
             probs = torch.cat((left_path_probs, right_path_probs), dim=1)
-            probs = probs.prod(dim=1)
+            probs = probs.prod(dim=1).float()
             actions = probs.mm(self.action_probs)
         else:
             left_path_probs = self.left_path_sigs * sig_vals.t()
@@ -243,7 +243,7 @@ class ProLoNet(nn.Module):
             probs = torch.cat((left_path_probs, right_path_probs), dim=0)
             probs = probs.prod(dim=0)
 
-            actions = (self.action_probs * probs.view(1, -1).t()).sum(dim=0)
+            actions = (self.action_probs * probs.view(1, -1).t()).sum(dim=0).unsqueeze(0)
         if not self.is_value:
             return self.softmax(actions)
         else:
