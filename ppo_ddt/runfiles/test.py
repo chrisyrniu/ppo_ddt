@@ -1,14 +1,23 @@
 """
-Created by Andrew Silva on 3/26/21
+Created by Yaru Niu
 """
 import gym
 import numpy as np
+import random
+import os
+import torch
 from ppo_ddt.rl_helpers import DDTPolicy
 from ppo_ddt.agents.vectorized_prolonet_helpers import convert_to_crisp
 from ppo_ddt.rl_helpers.save_after_ep_callback import EpCheckPointCallback
 import highway_env
 
-from stable_baselines3 import SAC
+from stable_baselines3 import PPO
+
+def make_configure_env(**kwargs):
+    env = gym.make(kwargs["id"])
+    env.configure(kwargs["config"])
+    env.reset()
+    return env
 
 def set_all_seeds(seed):
     random.seed(seed)
@@ -18,44 +27,67 @@ def set_all_seeds(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
-#
-set_all_seeds(42)
-# eval_env = gym.make("LunarLanderContinuous-v2")
-# eval_env = gym.make("InvertedPendulum-v2")
-eval_env = gym.make("lane-keeping-v0")
-save_folder = 'lk/submodels_hard_node_leaves_8_max_500'
-callback = EpCheckPointCallback(eval_env=eval_env, best_model_save_path='../../' + save_folder + '/',
-                                eval_freq=1500, minimum_reward=0)
-# env = gym.make("LunarLanderContinuous-v2")
-# env = gym.make("InvertedPendulum-v2")
-env = gym.make("lane-keeping-v0")
 
-# model = SAC("DDTPolicy", env,
-#             learning_rate=3e-4,
-#             buffer_size=1000000,
-#             batch_size=256,
-#             ent_coef='auto',
-#             train_freq=1,
-#             gradient_steps=1,
-#             gamma=0.9999,
-#             tau=0.01,
-#             learning_starts=10000,
-#             policy_kwargs={'net_arch': [400, 300]},
-#             verbose=1)
-# model.learn(total_timesteps=500000, log_interval=4, callback=callback)
-# model.save("../../models/mlp_lunar")
+# env_kwargs = {
+#     'id': 'highway-v0',
+#     'config': {
+#         "lanes_count": 3,
+#         "vehicles_count": 15,
+#         "observation": {
+#             "type": "Kinematics",
+#             "vehicles_count": 10,
+#             "features": [
+#                 "presence",
+#                 "x",
+#                 "y",
+#                 "vx",
+#                 "vy",
+#                 "cos_h",
+#                 "sin_h"
+#             ],
+#             "absolute": False
+#         },
+#         "policy_frequency": 2,
+#         "duration": 40,
+#     }
+# }
 
-# del model # remove to demonstrate saving and loading
+env_kwargs = {
+    'id': 'highway-v0',
+    'config': {
+        "lanes_count": 3,
+        "vehicles_count": 15,
+        "observation": {
+            "type": "Kinematics",
+            "vehicles_count": 4,
+            "features": [
+                "x",
+                "y",
+                "vx",
+                "vy"
+            ],
+            "absolute": False
+        },
+        "policy_frequency": 2,
+        "duration": 40,
+    }
+}
 
-model = SAC.load("../../" + save_folder + "/best_model")
-set_all_seeds(5)
+save_folder = 'saved_models/ppo_ddt/small_env/run1'
+
+model = PPO.load("../../" + save_folder + "/best_model")
+env = make_configure_env(**env_kwargs)
+
+set_all_seeds(0)
 obs = env.reset()
 episode_reward_for_reg = []
 for _ in range(20):
     done = False
     episode_reward = 0
+    t = 0
     while not done:
-        action, _states = model.predict(obs, deterministic=True)
+        t += 1
+        action, _states = model.predict(obs)
         obs, reward, done, info = env.step(action)
         # print('action', action)
         # print('obs', obs)
@@ -64,13 +96,14 @@ for _ in range(20):
         if done:
             obs = env.reset()
             episode_reward_for_reg.append(episode_reward)
+            print('duration', t)
             break
 print(episode_reward_for_reg)
 print(np.mean(episode_reward_for_reg))
 print(np.std(episode_reward_for_reg))
 
 model.actor.ddt = convert_to_crisp(model.actor.ddt, training_data=None)
-set_all_seeds(5)
+set_all_seeds(0)
 obs = env.reset()
 discrete_episode_reward_for_reg = []
 for _ in range(20):

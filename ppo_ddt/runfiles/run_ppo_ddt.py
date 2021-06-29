@@ -243,7 +243,7 @@ def attention(query, key, value, mask=None, dropout=None):
 
 attention_network_kwargs = dict(
     in_size=5*15,
-    embedding_layer_kwargs={"in_size": 7, "layer_sizes": [64, 64], "reshape": False},
+    embedding_layer_kwargs={"in_size": 4, "layer_sizes": [64, 64], "reshape": False},
     attention_layer_kwargs={"feature_size": 64, "heads": 2},
 )
 
@@ -274,6 +274,30 @@ def make_configure_env(**kwargs):
     return env
 
 
+# env_kwargs = {
+#     'id': 'highway-v0',
+#     'config': {
+#         "lanes_count": 3,
+#         "vehicles_count": 15,
+#         "observation": {
+#             "type": "Kinematics",
+#             "vehicles_count": 10,
+#             "features": [
+#                 "presence",
+#                 "x",
+#                 "y",
+#                 "vx",
+#                 "vy",
+#                 "cos_h",
+#                 "sin_h"
+#             ],
+#             "absolute": False
+#         },
+#         "policy_frequency": 2,
+#         "duration": 40,
+#     }
+# }
+
 env_kwargs = {
     'id': 'highway-v0',
     'config': {
@@ -281,15 +305,12 @@ env_kwargs = {
         "vehicles_count": 15,
         "observation": {
             "type": "Kinematics",
-            "vehicles_count": 10,
+            "vehicles_count": 4,
             "features": [
-                "presence",
                 "x",
                 "y",
                 "vx",
-                "vy",
-                "cos_h",
-                "sin_h"
+                "vy"
             ],
             "absolute": False
         },
@@ -313,7 +334,7 @@ if __name__ == "__main__":
         )
         env = make_vec_env(make_configure_env, n_envs=n_cpu, seed=0, vec_env_cls=SubprocVecEnv, env_kwargs=env_kwargs)
         eval_env = make_vec_env(make_configure_env, n_envs=1, seed=0, vec_env_cls=DummyVecEnv, env_kwargs=env_kwargs)
-        save_folder = 'saved_models/ppo_ddt'
+        save_folder = 'saved_models/ppo_ddt/small_env/run1'
         callback = EpCheckPointCallback(eval_env=eval_env, best_model_save_path='../../' + save_folder + '/',
 		                                eval_freq=1000, minimum_reward=28)
 
